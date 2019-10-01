@@ -42,7 +42,7 @@ class Lpt2NbodyNet(nn.Module):
         self.layer6 = self._make_layer(block,256,128,blocks=2,stride=1)
         self.deconv2 = nn.ConvTranspose3d(128,64,3,stride=2,padding=0)
         self.deconv_batchnorm2 = nn.BatchNorm3d(num_features = 64,momentum=0.1)
-        self.layer7 = self._make_layer(block,128,32,blocks=2,stride=1)
+        self.layer7 = self._make_layer(block,128,64,blocks=1,stride=1)
         self.layer8 = self._make_layer(block,64,32,blocks=2,stride=1)
         self.deconv4 = nn.ConvTranspose3d(32,1,1,stride=1,padding=0)
         self.pad=nn.ConstantPad3d((0,1,0,1,0,1), 0)
@@ -56,7 +56,7 @@ class Lpt2NbodyNet(nn.Module):
 
     def forward(self,x):
         x  = self.layerm1(x)
-        x0 = nn.MaxPool3d(2, stride=2)(x)
+        #x0 = nn.MaxPool3d(2, stride=2)(x)
         x  = self.layer0(x)
         x1 = self.layer1(x)
         x  = self.layer2(x1)
@@ -64,17 +64,16 @@ class Lpt2NbodyNet(nn.Module):
         x  = self.layer4(x2)
         x  = self.layer5(x)
         x  = self.pad(x)
-        #x  = periodic_padding_3d(x,pad=(0,1,0,1,0,1))
         x  = nn.functional.relu(self.deconv_batchnorm1(crop_tensor(self.deconv1(x))),inplace=True)
         x  = torch.cat((x,x2),dim=1)
         x  = self.layer6(x)
         x  = self.pad(x)
-        #x  = periodic_padding_3d(x,pad=(0,1,0,1,0,1))
         x  = nn.functional.relu(self.deconv_batchnorm2(crop_tensor(self.deconv2(x))),inplace=True)
         x  = torch.cat((x,x1),dim=1)
+        #x  = torch.cat((x,x0),dim=1)
         x  = self.layer7(x)
-        x  = torch.cat((x,x0),dim=1)
         x  = self.layer8(x)
         x  = self.deconv4(x)
+        x  = nn.functional.relu(x,inplace=True)
 
         return x
