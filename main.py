@@ -2,9 +2,9 @@
 
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:3
-#SBATCH --time=10:00:00
+#SBATCH --time=9:00:00
 #SBATCH --mem=8GB
-#SBATCH --cpus-per-task=22
+#SBATCH --cpus-per-task=24
 #SBATCH -o "/scratch/dsw310/CCA/output/output1.log"
 #SBATCH -e "/scratch/dsw310/CCA/output/error1.log"
 #SBATCH --mail-type=ALL
@@ -30,22 +30,22 @@ from data_utils import SimuData
 dire='/scratch/dsw310/CCA/output/'
 imp='1'
 
-num_epochs=10
+num_epochs=11
 #eval_frequency=2
 
 net = Lpt2NbodyNet(BasicBlock)
 net.cuda()
 net = nn.DataParallel(net)
-#net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/0929.pt')
+net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/1012_2.pt')
 #criterion = nn.MSELoss()
-optimizer = torch.optim.Adam(net.parameters(),lr=1e-7, betas=(0.9, 0.999), eps=1e-08,weight_decay=1e-4)
+optimizer = torch.optim.Adam(net.parameters(),lr=5e-4, betas=(0.9, 0.999), eps=1e-08,weight_decay=1e-4)
 
 start_time = time.time()
 
-TrainSet=SimuData(0,150000)#0,180000
-ValSet=SimuData(150000,165000)#180000,200000
-TrainLoader=DataLoader(TrainSet, batch_size=30,shuffle=True, num_workers=6)
-ValLoader=DataLoader(ValSet, batch_size=30,shuffle=True, num_workers=6)
+TrainSet=SimuData(0,165000)#0,180000
+ValSet=SimuData(165000,180000)#180000,200000
+TrainLoader=DataLoader(TrainSet, batch_size=30,shuffle=True, num_workers=8)
+ValLoader=DataLoader(ValSet, batch_size=30,shuffle=True, num_workers=8)
 
 loss_train = []
 loss_val = []
@@ -88,14 +88,5 @@ for epoch in range(num_epochs):
     
 time_elapsed = time.time() - start_time
 print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-
-
-
-
-
-
-
-
-
 
 
