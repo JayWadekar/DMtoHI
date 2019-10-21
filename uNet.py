@@ -15,7 +15,7 @@ class BasicBlock(nn.Module):
         #self.drop=nn.dropout(0.1)
         self.conv1 = conv3x3(inplane,outplane,padding=0,stride=stride)
         self.bn1 = nn.BatchNorm3d(outplane)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.LeakyReLU(inplace=True)
         self.pad1=nn.ConstantPad3d((1,1,1,1,1,1), 0)
 
     def forward(self,x):
@@ -64,16 +64,15 @@ class Lpt2NbodyNet(nn.Module):
         x  = self.layer4(x2)
         x  = self.layer5(x)
         x  = self.pad(x)
-        x  = nn.functional.relu(self.deconv_batchnorm1(crop_tensor(self.deconv1(x))),inplace=True)
+        x  = nn.functional.leaky_relu(self.deconv_batchnorm1(crop_tensor(self.deconv1(x))),inplace=True)
         x  = torch.cat((x,x2),dim=1)
         x  = self.layer6(x)
         x  = self.pad(x)
-        x  = nn.functional.relu(self.deconv_batchnorm2(crop_tensor(self.deconv2(x))),inplace=True)
+        x  = nn.functional.leaky_relu(self.deconv_batchnorm2(crop_tensor(self.deconv2(x))),inplace=True)
         #x  = torch.cat((x,x1),dim=1)
         #x  = torch.cat((x,x0),dim=1)
         #x  = self.layer7(x)
         x  = self.layer8(x)
-        x  = self.deconv4(x)
-        x  = nn.functional.relu(x,inplace=True)
+        x  = nn.functional.relu(self.deconv4(x),inplace=True)
 
         return x

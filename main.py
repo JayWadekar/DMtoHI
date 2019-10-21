@@ -2,9 +2,9 @@
 
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:3
-#SBATCH --time=9:00:00
+#SBATCH --time=10:00:00
 #SBATCH --mem=8GB
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=22
 #SBATCH -o "/scratch/dsw310/CCA/output/output1.log"
 #SBATCH -e "/scratch/dsw310/CCA/output/error1.log"
 #SBATCH --mail-type=ALL
@@ -30,22 +30,22 @@ from data_utils import SimuData
 dire='/scratch/dsw310/CCA/output/'
 imp='1'
 
-num_epochs=11
+num_epochs=15
 #eval_frequency=2
 
 net = Lpt2NbodyNet(BasicBlock)
 net.cuda()
 net = nn.DataParallel(net)
-net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/1012_2.pt')
+net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/1018.pt')
 #criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(net.parameters(),lr=5e-4, betas=(0.9, 0.999), eps=1e-08,weight_decay=1e-4)
 
 start_time = time.time()
 
-TrainSet=SimuData(0,165000)#0,180000
-ValSet=SimuData(165000,180000)#180000,200000
-TrainLoader=DataLoader(TrainSet, batch_size=30,shuffle=True, num_workers=8)
-ValLoader=DataLoader(ValSet, batch_size=30,shuffle=True, num_workers=8)
+TrainSet=SimuData(0,150000)#0,180000
+ValSet=SimuData(150000,165000)#180000,200000
+TrainLoader=DataLoader(TrainSet, batch_size=30,shuffle=True, num_workers=7)
+ValLoader=DataLoader(ValSet, batch_size=30,shuffle=True, num_workers=7)
 
 loss_train = []
 loss_val = []
@@ -60,8 +60,8 @@ for epoch in range(num_epochs):
         NetInput = data[0].cuda()
         Y_pred = net(NetInput)
         temp=data[1].cuda()
-        #loss = criterion(Y_pred, data[1].cuda())
-        loss = (Y_pred-temp).pow(6).mean()
+        loss =(((Y_pred - temp).pow(2))*(torch.exp(temp*11.515))).mean()
+        #loss = (Y_pred-temp).pow(6).mean()
         loss_train.append(loss.item())
         loss.backward()
         optimizer.step()
@@ -76,7 +76,7 @@ for epoch in range(num_epochs):
             Y_pred = net(NetInput)
             temp=data[1].cuda()
             #_loss += criterion(Y_pred, data[1].cuda()).item()
-            _loss += ((Y_pred-temp).pow(6).mean()).item()
+            _loss += ((((Y_pred - temp).pow(2))*(torch.exp(temp*11.515))).mean()).item()
     loss_val.append(_loss/(t_val+1))
     np.savetxt(dire+'valLoss'+imp+'.dat',loss_val)
     print ('Val {}'.format(loss_val))
