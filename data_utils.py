@@ -21,7 +21,8 @@ class SimuData(Dataset):
         
 def get_mini_batch(ind):
     inp=np.load(inpDir+str(ind)+'.npy')
+    inp=np.split(inp,2,axis=0)
     out=np.load(outDir+str(ind)+'.npy')
     inp[1]=inp[1]/5.
-    return torch.from_numpy(inp).float(),torch.from_numpy(out).float()
+    return torch.from_numpy(inp[0]).float(),torch.from_numpy(inp[1]).float(),torch.from_numpy(out).float()
         
