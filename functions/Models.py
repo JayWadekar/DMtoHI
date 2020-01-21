@@ -75,9 +75,89 @@ class VanillaUnet(nn.Module):
         x  = self.pad(x)
         x  = F.leaky_relu(self.deconv_batchnorm2(crop_tensor(self.deconv2(x))),inplace=True)
         x  = torch.cat((x,x1),dim=1)
-        #x  = torch.cat((x,x0),dim=1)
         x  = self.layer7(x)
         x  = self.layer8(x)
         x  = F.relu(self.deconv4(x),inplace=True)
 
+        return x
+        
+class two_phase_conv(nn.Module):
+    def __init__(self,first_pmodel,second_pmodel):
+        super(two_phase_conv,self).__init__()
+        self.fp = first_pmodel
+        for param in self.fp.parameters():
+            param.requires_grad = False
+        self.sp = second_pmodel
+        self.thres = 0.5
+    
+    def forward(self,X):
+        output = self.fp(X)
+        outputs = F.softmax(output, dim=1)[:,1,:,:,:]
+        mask_value = (outputs > self.thres).float()
+        result = mask_value * self.sp(X)
+        return result
+
+class BasicConv3d(nn.Module):
+
+    def __init__(self, in_channels, out_channels, **kwargs):
+        super(BasicConv3d, self).__init__()
+        self.conv = nn.Conv3d(in_channels, out_channels, bias=False, **kwargs)
+        self.bn1 = nn.BatchNorm3d(out_channels)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn1(x)
+        return F.leaky_relu(x, inplace=True)
+        
+                
+class InceptionE(nn.Module):
+
+    def __init__(self, in_channels, conv1_out, conv3_out, conv5_out, pool_out):
+        super(InceptionE, self).__init__()
+        self.branch1x1 = BasicConv3d(in_channels, conv1_out, kernel_size=1)
+        self.branch3x3 = BasicConv3d(in_channels, conv3_out, kernel_size=3, padding = 1)
+        self.branch5x5 = BasicConv3d(in_channels, conv5_out, kernel_size=5, padding = 2)
+        self.branch_pool = BasicConv3d(in_channels, pool_out, kernel_size=1)
+
+
+    def forward(self, x):
+        branch1x1 = self.branch1x1(x)
+
+        branch3x3 = self.branch3x3(x)
+        
+        branch5x5 = self.branch5x5(x)
+        
+        x = F.avg_pool3d(x, kernel_size=3, stride=1, padding=1)
+        x = self.branch_pool(x)
+        x = [branch1x1, branch3x3, branch5x5, x]
+        return torch.cat(x, 1)
+
+
+class Inception(nn.Module):
+    def __init__(self, channels, conv1_out, conv3_out, conv5_out, reg = 0):
+        super(Inception, self).__init__()
+        self.convm1 = BasicConv3d(channels, 4, kernel_size = 3, padding = 1)
+        self.incep1 = InceptionE(4, conv1_out//2, conv3_out//2, conv5_out//2, 2)
+        conv_in = conv1_out//2 + conv3_out//2 + conv5_out//2 + 2
+        self.conv0 = BasicConv3d(conv_in, conv_in+6, kernel_size = 3, padding = 1, stride=2)
+        self.conv1 = BasicConv3d(conv_in+6, 8, kernel_size = 3, padding = 1)
+        self.incep2 = InceptionE(8, conv1_out, conv3_out, conv5_out, 3)
+        conv_in = conv1_out + conv3_out + conv5_out + 3
+        self.conv2 = BasicConv3d(conv_in, conv_in//2, kernel_size = 3, padding = 1)
+        self.reg=reg
+        if reg:
+            dim_out = 1
+        else:
+            dim_out = 2
+        self.conv3 = BasicConv3d(conv_in//2, dim_out, kernel_size = 1)
+    def forward(self, x):
+        x = self.convm1(x)
+        x = self.incep1(x)
+        x = self.conv0(x)
+        x=self.conv1(x)
+        x = self.incep2(x)
+        x=self.conv2(x) 
+        x=self.conv3(x)
+        if self.reg:
+            x = x.squeeze(1)
         return x
