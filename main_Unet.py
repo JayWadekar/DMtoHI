@@ -3,15 +3,15 @@
 #SBATCH --partition=p100_4,p40_4
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:3
-#SBATCH --time=12:00:00
+#SBATCH --time=10:30:00
 #SBATCH --mem=8GB
-#SBATCH --cpus-per-task=22
+#SBATCH --cpus-per-task=20
 #SBATCH -o "/scratch/dsw310/CCA/output/Unet/outUnet.log"
 #SBATCH -e "/scratch/dsw310/CCA/output/Unet/errUnet.log"
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=dsw310@nyu.edu
 
-#Notes: Look at LR, number of epochs, input net, Loss power
+#Notes: Look at Loss parameters, number of epochs, input net
 #Changed: 
 #Time 49m for 42 Batchsize
 
@@ -22,9 +22,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import sys
 import time
-sys.path.insert(0, '/scratch/dsw310/CCA/functions')
+sys.path.insert(0, '/home/dsw310/CCA/functions')
 from uNet import *
 from data_utils import SimuData
+from tools import *
 
 
 #dire='/scratch/dsw310/CCA/trash/TrashOut/'
@@ -37,12 +38,11 @@ num_epochs=20
 batch_size=42; num_workers=16
 #eval_frequency=2
 
-net = DMUnet(BasicBlock)
-net.cuda()
-net = nn.DataParallel(net)
-net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0126_2.pt')
-#criterion = nn.MSELoss()
-optimizer = torch.optim.Adam(net.parameters(),lr=5e-7, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+net = nn.DataParallel(DMUnet(BasicBlock).to(device))
+net.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0208_sd.pt'))
+criterion = DMUnet_loss(weight_ratio=5e-3,thres=0.87)
+optimizer = torch.optim.Adam(net.parameters(),lr=1e-7, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
 
 start_time = time.time()
 
@@ -62,8 +62,8 @@ for epoch in range(num_epochs):
     for t, data in enumerate(TrainLoader, 0):
         optimizer.zero_grad()
         Y_pred = net(data[0].cuda())
-        target=data[1].cuda()
-        loss =((Y_pred - target).pow(2)*torch.exp((target-0.4)*8.)).mean()
+        loss = criterion(Y_pred, data[1].cuda())
+        #loss =((Y_pred - target).pow(2)*torch.exp((target-0.4)*8.)).mean()
         loss_train.append(loss.item())
         loss.backward()
         optimizer.step()
@@ -74,14 +74,12 @@ for epoch in range(num_epochs):
     for t_val, data in enumerate(ValLoader,0):
         with torch.no_grad():
             Y_pred = net(data[0].cuda())
-            target=data[1].cuda()
-            #_loss += criterion(Y_pred, data[1].cuda()).item()
-            _loss += ((Y_pred - target).pow(2)*torch.exp((target-0.4)*8.)).mean().item()
+            _loss += criterion(Y_pred, data[1].cuda()).item()
     loss_val.append(_loss/(t_val+1))
     np.savetxt(dire+'valUnet'+imp+'.dat',loss_val)
     if( _loss/(t_val+1) < best_val):
         best_val= _loss/(t_val+1)
-        torch.save(net,dire+'BestUnet'+imp+'.pt')
+        torch.save(net.state_dict(),dire+'BestUnet.pt')
     time_elapsed = time.time() - start_time
     print('Time {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
     

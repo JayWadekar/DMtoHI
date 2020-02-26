@@ -2,17 +2,18 @@
 
 #SBATCH --partition=p100_4,p40_4
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:3
-#SBATCH --time=12:30:00
-#SBATCH --mem=8GB
-#SBATCH --cpus-per-task=20
+#SBATCH --gres=gpu:2
+#SBATCH --time=02:30:00
+#SBATCH --mem=6GB
+#SBATCH --cpus-per-task=14
 #SBATCH -o "/scratch/dsw310/CCA/output/Reg/outReg.log"
 #SBATCH -e "/scratch/dsw310/CCA/output/Reg/errReg.log"
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=dsw310@nyu.edu
 
-#Notes: Look at LR, number of epochs, input net
+#Look: LR, input net
 #Changed: Loss criterion
+#Notes: 3m
 
 import numpy as np
 import torch
@@ -21,7 +22,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 import sys, time
-sys.path.insert(0, '/scratch/dsw310/CCA/functions')
+sys.path.insert(0, '/home/dsw310/CCA/functions')
 from uNet import *
 from tools import *
 from data_utils import *
@@ -29,11 +30,11 @@ from data_utils import *
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 dire='/scratch/dsw310/CCA/output/Reg/'
 
-num_epochs=100
-batch_size=42; num_workers=16
+num_epochs=500
+batch_size=28; num_workers=14
 #eval_frequency=2
 
-IndList2=np.loadtxt('/scratch/dsw310/CCA/data/extras/IndList/IndList_original.dat'); IndList2=IndList2.astype(int)  
+IndList2=np.loadtxt('/scratch/dsw310/CCA/data/extras/IndList/2phase_0208Unet.dat').astype(int)  
 class SimuData2(Dataset):
     def __init__(self,lIndex,hIndex,hod=0,aug=0,test=0):
         self.datafiles = []
@@ -54,14 +55,14 @@ mask_model.eval()
 for param in mask_model.parameters(): param.requires_grad = False
 
 reg_model = nn.DataParallel(RegUnet(BasicBlock).to(device))
-#reg_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Reg/0218.pt'))
+reg_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Reg/0226.pt'))
 
 #criterion = reg_loss(weight_ratio=5e-3,thres=0.87)
-optimizer = torch.optim.Adam(reg_model.parameters(),lr=1e-8, betas=(0.9, 0.999), eps=1e-08,weight_decay=1e-5)
+optimizer = torch.optim.Adam(reg_model.parameters(),lr=5e-4, betas=(0.9, 0.999), eps=1e-08,weight_decay=1e-5)
 start_time = time.time()
 
-TrainSet=SimuData2(0,165000,hod=0,aug=1)
-ValSet=SimuData2(165000,180000,hod=0,aug=1)
+TrainSet=SimuData2(0,6890,hod=0,aug=1)
+ValSet=SimuData2(6890,7657,hod=0,aug=1) #Numbers specific to Indlist
 TrainLoader=DataLoader(TrainSet, batch_size=batch_size,shuffle=True, num_workers=num_workers)
 ValLoader=DataLoader(ValSet, batch_size=batch_size,shuffle=True, num_workers=num_workers)
 loss_train = []; loss_val = []
@@ -72,12 +73,11 @@ for epoch in range(num_epochs):
     reg_model.train()
     for t, data in enumerate(TrainLoader, 0):
         optimizer.zero_grad()
-        inp=data[0].cuda()
+        inp=data[0].to(device)
         mask = (mask_model(inp) > thres)
-        if mask.any()==0: continue
         Y_pred = (reg_model(inp))[mask]
-        target=(data[1].cuda())[mask]
-        loss =((Y_pred - target).pow(2)*torch.exp((target-thres)*8.)).mean() if mask.any()>0 else 0.
+        target=(data[1].to(device))[mask]
+        loss =((Y_pred - target).pow(2)*torch.exp(target*8.)).mean() if mask.any()>0 else torch.tensor(0.).to(device)
         #loss = criterion(Y_pred[mask], target[mask])
         loss_train.append(loss.item())
         loss.backward()
@@ -88,12 +88,11 @@ for epoch in range(num_epochs):
     _loss=0
     for t_val, data in enumerate(ValLoader,0):
         with torch.no_grad():
-            inp=data[0].cuda()
+            inp=data[0].to(device)
             mask = (mask_model(inp) > thres)
-            if mask.any()==0: continue
             Y_pred = (reg_model(inp))[mask]
-            target=(data[1].cuda())[mask]
-            _loss =(((Y_pred - target).pow(2)*torch.exp((target-thres)*8.)).mean()).item() if mask.any()>0 else 0.
+            target=(data[1].to(device))[mask]
+            _loss +=(((Y_pred - target).pow(2)*torch.exp(target*8.)).mean()).item() if mask.any()>0 else 0.
     loss_val.append(_loss/(t_val+1))
     np.savetxt(dire+'valReg.dat',loss_val)
     if( _loss/(t_val+1) < best_val):
