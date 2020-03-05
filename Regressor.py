@@ -3,7 +3,7 @@
 #SBATCH --partition=p100_4,p40_4
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:2
-#SBATCH --time=02:30:00
+#SBATCH --time=08:00:00
 #SBATCH --mem=6GB
 #SBATCH --cpus-per-task=14
 #SBATCH -o "/scratch/dsw310/CCA/output/Reg/outReg.log"
@@ -48,17 +48,17 @@ class SimuData2(Dataset):
     def __len__(self):
         return len(self.datafiles)
 
-best_val = 1e10; thres=0.6
+best_val = 1e10; thres=0.7
 mask_model = nn.DataParallel(DMUnet(BasicBlock).to(device))
 mask_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0208_sd.pt'))
 mask_model.eval()
 for param in mask_model.parameters(): param.requires_grad = False
 
 reg_model = nn.DataParallel(RegUnet(BasicBlock).to(device))
-reg_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Reg/0226.pt'))
+reg_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Reg/0302_2.pt'))
 
-#criterion = reg_loss(weight_ratio=5e-3,thres=0.87)
-optimizer = torch.optim.Adam(reg_model.parameters(),lr=5e-4, betas=(0.9, 0.999), eps=1e-08,weight_decay=1e-5)
+criterion = reg_loss(weight_ratio=0.8,thres=thres)
+optimizer = torch.optim.Adam(reg_model.parameters(),lr=8e-6, betas=(0.9, 0.999), eps=1e-08,weight_decay=1e-5)
 start_time = time.time()
 
 TrainSet=SimuData2(0,6890,hod=0,aug=1)
@@ -74,11 +74,10 @@ for epoch in range(num_epochs):
     for t, data in enumerate(TrainLoader, 0):
         optimizer.zero_grad()
         inp=data[0].to(device)
-        mask = (mask_model(inp) > thres)
-        Y_pred = (reg_model(inp))[mask]
-        target=(data[1].to(device))[mask]
-        loss =((Y_pred - target).pow(2)*torch.exp(target*8.)).mean() if mask.any()>0 else torch.tensor(0.).to(device)
-        #loss = criterion(Y_pred[mask], target[mask])
+        mask = mask_model(inp) > thres
+        Y_pred = reg_model(inp)#(reg_model(inp))[mask] #target=(data[1].to(device))[mask]
+        #loss =((Y_pred - target).pow(2)*torch.exp(target*8.)).mean() if mask.any()>0 else (Y_pred - target)*0.
+        loss = criterion(Y_pred, data[1].to(device),mask)
         loss_train.append(loss.item())
         loss.backward()
         optimizer.step()
@@ -89,10 +88,9 @@ for epoch in range(num_epochs):
     for t_val, data in enumerate(ValLoader,0):
         with torch.no_grad():
             inp=data[0].to(device)
-            mask = (mask_model(inp) > thres)
-            Y_pred = (reg_model(inp))[mask]
-            target=(data[1].to(device))[mask]
-            _loss +=(((Y_pred - target).pow(2)*torch.exp(target*8.)).mean()).item() if mask.any()>0 else 0.
+            mask = mask_model(inp) > thres
+            Y_pred = reg_model(inp)#(reg_model(inp))[mask] #target=(data[1].to(device))[mask]
+            _loss += criterion(Y_pred, data[1].to(device),mask).item()
     loss_val.append(_loss/(t_val+1))
     np.savetxt(dire+'valReg.dat',loss_val)
     if( _loss/(t_val+1) < best_val):

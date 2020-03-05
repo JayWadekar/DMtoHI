@@ -20,11 +20,9 @@ class BasicBlock(nn.Module):
         self.pad1=nn.ConstantPad3d((1,1,1,1,1,1), 0)
 
     def forward(self,x):
-        #x = periodic_padding_3d(x,pad=(1,1,1,1,1,1))
         x=self.pad1(x)
         out = self.conv1(x)
-        out = self.bn1(out)
-        #out = self.drop(out)
+        out = self.bn1(out) #Never used: out = self.drop(out)
         out = self.relu(out)
         return out
 
@@ -80,7 +78,7 @@ class VanillaUnet(nn.Module):
         x  = F.relu(self.deconv4(x),inplace=True)
 
         return x
-        
+                
 class two_phase_conv(nn.Module):
     def __init__(self,first_pmodel,second_pmodel):
         super(two_phase_conv,self).__init__()

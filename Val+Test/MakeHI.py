@@ -3,7 +3,7 @@
 #SBATCH --partition=p1080_4,v100_sxm2_4,p100_4,p40_4
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
-#SBATCH --time=00:40:00
+#SBATCH --time=01:10:00
 #SBATCH --mem=8GB
 #SBATCH --cpus-per-task=2
 #SBATCH -o "/scratch/dsw310/CCA/Val+Test/Unet/IO/OutMake.log"
@@ -19,30 +19,30 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import sys
 import time
-sys.path.insert(0, '/scratch/dsw310/CCA/functions')
+sys.path.insert(0, '/home/dsw310/CCA/functions')
 from uNet import *
 from data_utils import *
 from tools import *
 
-dire='/scratch/dsw310/CCA/data/output/HIboxes2/'
+dire='/scratch/dsw310/CCA/data/output/HIboxes/'
 side_half=20
 
 net = DMUnet(BasicBlock)
 net.cuda()
-net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/1129_2.pt')#1106, 1108
+net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0208.pt')#1106, 1108
 net.eval()
 start_time = time.time()
 
 class SimuData2(Dataset):
-    def __init__(self,index,hod=1,test=1):
+    def __init__(self,index,hod,aug,test):
         self.datafiles = []
-        self.hod=hod
-        self.test=test
+        self.hod=hod; self.test=test; self.aug=aug
+        
         for x in range(len(index)):
             self.datafiles+=[index[x]]
 
     def __getitem__(self, index):
-        return get_mini_batch(self.datafiles[index],self.hod,aug=0,self.test)
+        return get_mini_batch(self.datafiles[index],self.hod,self.aug,self.test)
 
     def __len__(self):
         return len(self.datafiles)

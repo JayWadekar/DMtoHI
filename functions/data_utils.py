@@ -3,19 +3,12 @@ from torch.utils.data.dataset import Dataset
 import numpy as np
 import h5py 
 
-inpDir='/scratch/dsw310/CCA/data/DM+halos/'
-outDir='/scratch/dsw310/CCA/data/smoothed/HI/'
+inpDir='/scratch/dsw310/CCA/data/DM+halos2/'
+outDir='/scratch/dsw310/CCA/data/smoothed/HI2/'
 
-IndList = []
-for i in np.arange(0,3969*22):
-    IndList+=[i]
-for i in np.arange(3969*22,3969*63):
-    if( ((i%3969)//63)<22):
-        IndList+=[i]
-    else:
-        if(i%63<22):
-            IndList+=[i] 
-    
+IndList=np.loadtxt('/scratch/dsw310/CCA/data/extras/IndList/IndList_haloMix.dat')
+IndList=IndList.astype(int)
+   
 class SimuData(Dataset):
     def __init__(self,lIndex,hIndex,hod=0,aug=0,test=0):
         self.datafiles = []

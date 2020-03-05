@@ -10,8 +10,8 @@
 #SBATCH --mail-type=NONE
 #SBATCH --mail-user=dsw310@nyu.edu
 
-#Notes: 140790, 188924, 32146, 19716 is interesting
-# srun -t00:01:00 --mem=2000 --gres=gpu:1 --pty /bin/bash
+#Notes: 140790, 138509, 188924, 32146 is interesting
+# srun -t00:01:00 --mem=3000 --gres=gpu:1 --pty /bin/bash
 
 import numpy as np
 import torch
@@ -19,22 +19,29 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import sys
 import time
-sys.path.insert(0, '/scratch/dsw310/CCA/functions')
+sys.path.insert(0, '/home/dsw310/CCA/functions')
 from uNet import *
 from data_utils import *
 from tools import *
 
-net = DMUnet(BasicBlock)
-net.cuda()
-criterion = nn.MSELoss()
-#optimizer = torch.optim.Adam(net.parameters(),lr=1e-4, betas=(0.9, 0.999), eps=1e-08,weight_decay=1e-4)
-net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0120_2.pt')
-net.eval()
+thres=0.7
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+mask_model = nn.DataParallel(DMUnet(BasicBlock).to(device))
+mask_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0208_sd.pt'))
+mask_model.eval()
+for param in mask_model.parameters(): param.requires_grad = False
+
+reg_model = nn.DataParallel(RegUnet(BasicBlock).to(device))
+reg_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Reg/0303.pt'))
+reg_model.eval()
+for param in reg_model.parameters(): param.requires_grad = False
+#criterion = nn.MSELoss()
+
 start_time = time.time()
 ind=140790
 
 class SimuData2(Dataset):
-    def __init__(self,index,hod=1,aug=0,test=0):
+    def __init__(self,index,hod=0,aug=0,test=0):
         self.datafiles = []
         self.hod=hod
         self.aug=aug
@@ -57,7 +64,12 @@ for epoch in range(num_epochs):
     
     for t_val, data in enumerate(TrainLoader,0):
         with torch.no_grad():
-            Y_pred = net(data[0].cuda())
+            inp=data[0].cuda()
+            Y_pred = mask_model(inp)
+            mask = (Y_pred > thres)
+            if mask.any()==1:
+                print('Yes mask')
+                Y_pred[mask]=(reg_model(inp))[mask]
             temp3=Y_pred.cpu()
             temp=data[1].cuda()
             temp2=data[1].cpu()
@@ -68,7 +80,7 @@ for epoch in range(num_epochs):
     #np.savetxt('/scratch/dsw310/CCA/Val+Test/valLoss.dat',loss_train)
     np.save('/scratch/dsw310/CCA/Val+Test/MLout.npy',temp3.numpy())
     np.save('/scratch/dsw310/CCA/Val+Test/Illustris.npy',temp2.numpy())
-    original=np.load('/scratch/dsw310/CCA/data/DM+halos/'+str(ind)+'.npy')
+    original=np.load('/scratch/dsw310/CCA/data/DM+halos2/'+str(ind)+'.npy')
     np.save('/scratch/dsw310/CCA/Val+Test/HaloModel.npy',original)
     time_elapsed = time.time() - start_time
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
