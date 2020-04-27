@@ -9,18 +9,27 @@
 #SBATCH --mail-type=NONE
 #SBATCH --mail-user=dsw310@nyu.edu
 
-#srun -c10 -t0:20:00 --mem=30GB --pty /bin/bash
+#srun -c2 -t0:20:00 --mem=30GB --pty /bin/bash
 
 import numpy as np
 import Pk_library as PKL
+import h5py
 
 side_half=20
 key='Unet' #key='try'
 
 BoxSize = 1.171875*(2*side_half+1); MAS  = 'CIC'; axis = 0
 
-delta=np.load('/scratch/dsw310/CCA/Val+Test/Unet/Box/Box'+key+'.npy')
-Pk = PKL.Pk(delta, BoxSize, axis, MAS, threads=10)
+key='Unet'
+delta=np.load('/scratch/dsw310/CCA/Val+Test/Unet/BoxUnet.npy')
+
+key='Ill'
+delta2=np.load('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_512Res.npy')[22*8+4:63*8+4,22*8+4:63*8+4,22*8+4:63*8+4]
+
+key='HOD'
+delta=np.load('/scratch/dsw310/CCA/data/smoothed/HI_HOD_WithProfile_smoothed_512Res.npy')[22*8+4:63*8+4,22*8+4:63*8+4,22*8+4:63*8+4]
+
+Pk = PKL.Pk(delta, BoxSize, axis, MAS, threads=2)
 temp=np.hstack((np.reshape(Pk.k3D,(-1,1)),np.reshape(Pk.Pk[:,0],(-1,1))))
 np.savetxt('/scratch/dsw310/CCA/Val+Test/Unet/Figs/Pow'+key+'.dat',temp)
 #np.savetxt('/scratch/dsw310/CCA/Val+Test/Unet/Figs/PowHOD_41.dat',temp)
@@ -56,12 +65,12 @@ np.savetxt('/scratch/dsw310/CCA/Val+Test/Unet/Figs/Void/Void'+key+'.dat',temp)
 #-------------------------------------------
 # Cross power with DM
 
-delta=np.load('/scratch/dsw310/CCA/Val+Test/Unet/Box/BoxIll_41.npy')
-delta2=np.load('/scratch/dsw310/CCA/Val+Test/Unet/Box/BoxUnet_1127.npy')
+delta=f['delta_HI'][22*8:63*8,22*8:63*8,22*8:63*8]
+delta2=np.load('/scratch/dsw310/CCA/Val+Test/Unet/BoxUnet_1127.npy')
 
-Pk = PKL.XPk([delta,delta2], BoxSize, axis, MAS=['CIC','CIC'], threads=10)
+Pk = PKL.XPk([delta,delta2], BoxSize, axis, MAS=['CIC','CIC'], threads=4)
 temp=np.hstack((np.reshape(Pk.k3D,(-1,1)),np.reshape(Pk.XPk[:,0,0],(-1,1)),np.reshape(Pk.Pk[:,0,0],(-1,1)),np.reshape(Pk.Pk[:,0,1],(-1,1))))
-key='HOD'
+key='Unet'
 np.savetxt('/scratch/dsw310/CCA/Val+Test/Unet/Figs/PowX'+key+'.dat',temp)
 #-------------------------------------------
 #print ('Side Length: {}'.format((2*side_half+1)))
@@ -70,8 +79,8 @@ np.savetxt('/scratch/dsw310/CCA/Val+Test/Unet/Figs/PowX'+key+'.dat',temp)
 #plt.ylabel("$P(k) [(Mpc/h)^3]$",fontsize=14)
 #plt.savefig('/scratch/dsw310/CCA/Val+Test/Unet/Power.pdf')
 
-#f = h5py.File('/scratch/dsw310/CCA/data/smoothed/HI_HOD_WithProfile_smoothed.hdf5', 'r')
-#delta=f['delta_HI'][22*32+16:64*32-16,22*32+16:64*32-16,22*32+16:64*32-16]
+#f = h5py.File('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_512Res.hdf5', 'r')
+#delta=f['delta_HI'][22*8+4:64*8-4,22*8+4:64*8-4,22*8+4:64*8-4]
 
 '''
 Trash----------------------

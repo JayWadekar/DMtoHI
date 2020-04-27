@@ -50,50 +50,45 @@ g = h5py.File('Halo_delta_HI_z=%s.hdf5'%z, 'w')
 g.create_dataset('delta_HI', data=delta_HI)
 g.close()
 
-
 #--------------------------------------------------------------------------------------------------------------------
-#Used to generate npy I/O files (Not the latest version, trash3 is latest)
+# Used to generate the I/O files
+# Takes nearly 30min
+import numpy as np
+import h5py, time, multiprocessing
 
-f = h5py.File('/scratch/dsw310/CCA/data/fields_z=1.0.hdf5', 'r')
-#dmMax=5.037600040435791 #DM max
-dmMax=6.114471435546875 #HI max    
-        
-#g = h5py.File('/scratch/dsw310/CCA/data/Halo_delta_HI_z=1.hdf5', 'r')
-#halo=f['delta_HI'][0:]
-#haloMax=0.
-#haloMin=1000.
-#haloMean=0.
-#for i in halo:
-#    temp=np.amax(i)
-#    temp2=np.amin(i)
-#    haloMean+=np.mean(i)
-#    if(temp>haloMax):
-#        haloMax = temp
-#    if(haloMin>temp2):
-#        haloMin = temp2
-#haloMean/=len(halo)
-#print ('Halo min: {}'.format(haloMin))
-#print ('Halo max: {}'.format(haloMax))
-#print ('Halo Mean: {}'.format(haloMean))
-haloMax=14264290.0
-haloMax = np.log10(2.+haloMax)
+f = h5py.File('/scratch/dsw310/CCA/data/fields_z=1.0.hdf5', 'r'); a=f['delta_m'][0:];
+a-=np.amin(a)
+a=np.power(a,0.1)
+a/=5.
+##a=np.power(a*5.,10.) #Inverse transform not complete
 
-for ind in range(0,pow(63,3)):#
-    print (ind)
+#f = h5py.File('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_512Res.hdf5', 'r'); a=f['delta_HI'][0:]
+#a-=np.amin(a)
+#a=np.power(a,0.2)
+#a/=2.
+## mean=0.28818035, std = 0.3
+#a=np.power(a*2.,5.)-1. #Inverse transform not complete
+np.save('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_512Res_rescaled.npy',a)
+
+def box(ind):
     ind2=ind // 3969; ind1= (ind%3969) // 63; ind0=ind % 63
-    #halo=g['delta_HI'][ind2*32:ind2*32+64,ind1*32:ind1*32+64,ind0*32:ind0*32+64]
-    #dm=f['delta_m'][ind2*32:ind2*32+64,ind1*32:ind1*32+64,ind0*32:ind0*32+64]
-    dm=f['delta_HI'][ind2*32+16:ind2*32+48,ind1*32+16:ind1*32+48,ind0*32+16:ind0*32+48]
-    dm=dm/dmMax
-    #halo=np.log10(2.+halo)
-    #halo=halo/haloMax
-    #halo=np.expand_dims(halo,axis=0)
+    
+    dm=a[ind2*32:ind2*32+64,ind1*32:ind1*32+64,ind0*32:ind0*32+64]
+    #hi=a[ind2*8+4:ind2*8+12,ind1*8+4:ind1*8+12,ind0*8+4:ind0*8+12]
+    
     dm=np.expand_dims(dm,axis=0)
-    #np.save('/scratch/dsw310/CCA/data/DM+halos/'+str(ind)+'.npy',np.concatenate((halo, dm), axis=0))
-    np.save('/scratch/dsw310/CCA/data/HI/'+str(ind)+'.npy',dm)     
-         
-f.close()
-#g.close()
+    #hi=np.expand_dims(hi,axis=0)
+    
+    np.save('/scratch/dsw310/CCA/data/DM_training/'+str(ind)+'.npy',dm)   
+    #np.save('/scratch/dsw310/CCA/data/smoothed/HI_training/'+str(ind)+'.npy',hi)
+    return
+
+start_time = time.time()
+j=np.arange(0,pow(63,3),1)
+p = multiprocessing.Pool(processes=15)
+p.map(box, j)
+p.close(); p.join()
+print (time.time() - start_time)
 
 #--------------------------------------------------------------------------------------------------------------------
 #Determine threshold effect on power
@@ -130,7 +125,7 @@ import h5py
 
 rho_crit = UL.units().rho_crit
 
-f = h5py.File('/scratch/dsw310/CCA/data/smoothed/fields_z=1.0.hdf5', 'r')
+f = h5py.File('/scratch/dsw310/CCA/data/fields_z=1.0.hdf5', 'r')
 delta_HI=f['delta_HI'][0:]
 f.close()
 
@@ -227,7 +222,7 @@ g.create_dataset('delta_HI', data=delta_HI)
 g.close()
 
 #-----------------------------------------------------------------------
-#HI decrease resolution
+# HI decrease resolution
 
 import numpy as np
 import sys,os,h5py
@@ -242,23 +237,18 @@ axis = 0
 
 #BoxSize = 75.0 #Mpc/h
 
-f = h5py.File('/scratch/dsw310/CCA/data/smoothed/HI_smoothed.hdf5', 'r')
-a=f['delta_HI'][0:]
-a+=1.;
-
+f = h5py.File('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_2048Res.hdf5', 'r')
+a=f['delta_HI'][0:]; a+=1.
 highres=2048
 
 for i in range(1,highres-2,2):
     a[i-1,:,:]+=a[i,:,:]/2.; a[i+1,:,:]+=a[i,:,:]/2.; a[i,:,:]=0
     a[:,i-1,:]+=a[:,i,:]/2.; a[:,i+1,:]+=a[:,i,:]/2.; a[:,i,:]=0
     a[:,:,i-1]+=a[:,:,i]/2.; a[:,:,i+1]+=a[:,:,i]/2.; a[:,:,i]=0
- 
-
     
 a[highres-2,:,:]+=a[highres-1,:,:]/2.; a[0,:,:]+=a[highres-1,:,:]/2.; a[:,highres-2,:]+=a[:,highres-1,:]/2.
 a[:,0,:]+=a[:,highres-1,:]/2.; a[:,:,highres-2]+=a[:,:,highres-1]/2.
 a[:,:,0]+=a[:,:,highres-1]/2.; a[highres-1,:,:]=0.; a[:,highres-1,:]=0.; a[:,:,highres-1]=0.
-
 
 b=a[::2,::2,::2]
 b/=8.
@@ -273,3 +263,34 @@ BoxSize = 75.0*2047/2048.
 Pk = PKL.Pk(b, BoxSize, axis, MAS, 2)
 
 np.savetxt('/scratch/dsw310/CCA/data/extras/Pk_HOD_smooth_1024Res.dat', np.transpose([Pk.k3D, Pk.Pk[:,0]]))
+
+#--------------------------------------------------------------------------------------------------------------------
+#Used to generate npy I/O files (Older version with full Res HI)
+
+f = h5py.File('/scratch/dsw310/CCA/data/fields_z=1.0.hdf5', 'r')
+#dmMax=5.037600040435791 #DM max
+dmMax=6.114471435546875 #HI max    
+        
+#g = h5py.File('/scratch/dsw310/CCA/data/Halo_delta_HI_z=1.hdf5', 'r')
+haloMax=14264290.0
+haloMax = np.log10(2.+haloMax)
+
+for ind in range(0,pow(63,3)):#
+    print (ind)
+    ind2=ind // 3969; ind1= (ind%3969) // 63; ind0=ind % 63
+    #halo=g['delta_HI'][ind2*32:ind2*32+64,ind1*32:ind1*32+64,ind0*32:ind0*32+64]
+    #dm=f['delta_m'][ind2*32:ind2*32+64,ind1*32:ind1*32+64,ind0*32:ind0*32+64]
+    dm=f['delta_HI'][ind2*32+16:ind2*32+48,ind1*32+16:ind1*32+48,ind0*32+16:ind0*32+48]
+    dm=dm/dmMax
+    #halo=np.log10(2.+halo)
+    #halo=halo/haloMax
+    #halo=np.expand_dims(halo,axis=0)
+    dm=np.expand_dims(dm,axis=0)
+    #np.save('/scratch/dsw310/CCA/data/DM+halos/'+str(ind)+'.npy',np.concatenate((halo, dm), axis=0))
+    np.save('/scratch/dsw310/CCA/data/HI/'+str(ind)+'.npy',dm)     
+         
+f.close()
+#g.close()
+
+
+#--------------------------------------------------------------------------------------------------

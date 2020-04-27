@@ -3,15 +3,15 @@
 #SBATCH --partition=p1080_4,v100_sxm2_4,p100_4,p40_4
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
-#SBATCH --time=01:10:00
-#SBATCH --mem=8GB
+#SBATCH --time=01:00:00
+#SBATCH --mem=3GB
 #SBATCH --cpus-per-task=2
 #SBATCH -o "/scratch/dsw310/CCA/Val+Test/Unet/IO/OutMake.log"
 #SBATCH -e "/scratch/dsw310/CCA/Val+Test/Unet/IO/ErrMake.log"
-#SBATCH --mail-type=NONE
+#SBATCH --mail-type=ALL
 #SBATCH --mail-user=dsw310@nyu.edu
 
-#CHANGED: side_half, time
+#srun -t00:25:00 --mem=3000 --gres=gpu:1 --pty /bin/bash
 
 import numpy as np
 import torch
@@ -24,25 +24,25 @@ from uNet import *
 from data_utils import *
 from tools import *
 
-dire='/scratch/dsw310/CCA/data/output/HIboxes/'
+#dire='/scratch/dsw310/CCA/data/output/HIboxes/'
 side_half=20
 
-net = DMUnet(BasicBlock)
-net.cuda()
-net = torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0208.pt')#1106, 1108
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+net = nn.DataParallel(DMUnet(BasicBlock).to(device))
+net.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0425.pt'))
 net.eval()
 start_time = time.time()
 
 class SimuData2(Dataset):
-    def __init__(self,index,hod,aug,test):
+    def __init__(self,index,aug,test):
         self.datafiles = []
-        self.hod=hod; self.test=test; self.aug=aug
+        self.test=test; self.aug=aug
         
         for x in range(len(index)):
             self.datafiles+=[index[x]]
 
     def __getitem__(self, index):
-        return get_mini_batch(self.datafiles[index],self.hod,self.aug,self.test)
+        return get_mini_batch(self.datafiles[index],self.aug,self.test)
 
     def __len__(self):
         return len(self.datafiles)
@@ -50,22 +50,21 @@ class SimuData2(Dataset):
 start=42*3969+42*63+42 #32146# 19716 
 ind=[]
 
-
 for i in range(-side_half,side_half+1):
     for j in range(-side_half,side_half+1):
         for k in range(-side_half,side_half+1):
             ind.append(start+i*3969+j*63+k)
 
-
-TestSet=SimuData2(ind,hod=0,aug=0,test=1)
+TestSet=SimuData2(ind,aug=0,test=1)
 TestLoader=DataLoader(TestSet, batch_size=1,shuffle=False, num_workers=1)
 temp=[]
     
 for t, data in enumerate(TestLoader,0):
     with torch.no_grad():
         Y_pred = net(data[0].cuda())
-        temp=[Y_pred.cpu(),data[1]]
-    np.save(dire+str(temp[1].numpy()[0])+'.npy',temp[0].numpy())
+        temp.append([data[1].numpy()[0],Y_pred.cpu()[0,0].numpy()])
+
+np.save('/scratch/dsw310/CCA/data/output/HIboxes.npy',temp)
     
 time_elapsed = time.time() - start_time
 print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
