@@ -3,15 +3,16 @@
 #SBATCH --partition=p1080_4,v100_sxm2_4,p100_4,p40_4
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
-#SBATCH --time=01:10:00
+#SBATCH --time=00:10:00
 #SBATCH --mem=5GB
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=8
 #SBATCH -o "/scratch/dsw310/CCA/Val+Test/Unet/IO/OutMake.log"
 #SBATCH -e "/scratch/dsw310/CCA/Val+Test/Unet/IO/ErrMake.log"
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=dsw310@nyu.edu
 
-#CHANGED: side_half, time
+#LOOK: thres
+#srun -t00:10:00 --mem=4000 --gres=gpu:1 -c7 --pty /bin/bash
 
 import numpy as np
 import torch, time
@@ -24,21 +25,20 @@ from uNet import *
 from data_utils import *
 from tools import *
 
-thres=2.
+thres=1.8
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 side_half=20
 
 mask_model = nn.DataParallel(DMUnet(BasicBlock).to(device))
-mask_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0325.pt'))
+mask_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Unet/0425.pt',map_location=device))
 mask_model.eval()
 for param in mask_model.parameters(): param.requires_grad = False
 
+
 reg_model = nn.DataParallel(RegUnet(BasicBlock).to(device))
-reg_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Reg/0423.pt'))
+reg_model.load_state_dict(torch.load('/scratch/dsw310/CCA/Saved/BestModel/Reg/0505.pt',map_location=device))
 reg_model.eval()
 for param in reg_model.parameters(): param.requires_grad = False
-
-start_time = time.time()
 
 class SimuData2(Dataset):
     def __init__(self,index,aug,test):
@@ -47,10 +47,8 @@ class SimuData2(Dataset):
         
         for x in range(len(index)):
             self.datafiles+=[index[x]]
-
     def __getitem__(self, index):
         return get_mini_batch(self.datafiles[index],self.aug,self.test)
-
     def __len__(self):
         return len(self.datafiles)
 
@@ -63,19 +61,21 @@ for i in range(-side_half,side_half+1):
         for k in range(-side_half,side_half+1):
             ind.append(start+i*3969+j*63+k)
 
-
 TestSet=SimuData2(ind,aug=0,test=1)
-TestLoader=DataLoader(TestSet, batch_size=1,shuffle=False, num_workers=1)
+TestLoader=DataLoader(TestSet, batch_size=18,shuffle=False, num_workers=6)
 temp=[]
-    
+
+start_time = time.time()  
 for t, data in enumerate(TestLoader,0):
     with torch.no_grad():
         inp=data[0].to(device)
         Y_pred = mask_model(inp)
         mask = (Y_pred > thres)
         if mask.any()==1:
-            Y_pred[mask]=(reg_model(inp))[mask]
-        temp.append([data[1].numpy()[0],Y_pred.cpu()[0,0].numpy()])
+            inp=torch.pow(inp,2.5)/5.
+            out=torch.pow(reg_model(inp)*6.,.4)
+            Y_pred[mask]=out[mask]
+        temp.append([1,data[1].numpy(),Y_pred.cpu().numpy()])
  
 np.save('/scratch/dsw310/CCA/data/output/HIboxes.npy',temp)
    

@@ -22,14 +22,14 @@ rho_crit = UL.units().rho_crit
 
 BoxSize = 75.0 #Mpc/h
 
-dims = 2048
+dims = 512
 MAS  = 'CIC'
 axis = 0
 
 z=1
 alpha, M0, Mmin = 0.53, 1.5e10, 6e11
 
-f = h5py.File('Halo_catalogue_z=%s.hdf5'%z, 'r')
+f = h5py.File('/scratch/dsw310/CCA/data/extras/Halo_catalogue_z=%s.hdf5'%z, 'r')
 halo_pos=f['pos'][0:]
 halo_mass=f['mass'][0:]
 f.close()
@@ -52,23 +52,26 @@ g.close()
 
 #--------------------------------------------------------------------------------------------------------------------
 # Used to generate the I/O files
-# Takes nearly 30min
+# Takes nearly 30min #srun -c15 -t0:30:00 --mem=70GB --pty /bin/bash
 import numpy as np
 import h5py, time, multiprocessing
 
+#Max DM voxel is 459143940000.0
 f = h5py.File('/scratch/dsw310/CCA/data/fields_z=1.0.hdf5', 'r'); a=f['delta_m'][0:];
 a-=np.amin(a)
-a=np.power(a,0.1)
-a/=5.
+a=np.power(a,0.14) #0.1 and /5. was for FP
+a/=15.
 ##a=np.power(a*5.,10.) #Inverse transform not complete
 
-#f = h5py.File('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_512Res.hdf5', 'r'); a=f['delta_HI'][0:]
-#a-=np.amin(a)
-#a=np.power(a,0.2)
-#a/=2.
-## mean=0.28818035, std = 0.3
+
+#Max smoothed HI voxel is 9659.14446446792
+a = np.load('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_512Res.npy'); 
+a-=np.amin(a)
+a=np.power(a,0.28) #0.2 and /2. was for FP
+a/=5.2
+# mean=0.28818035, std = 0.3
 #a=np.power(a*2.,5.)-1. #Inverse transform not complete
-np.save('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_512Res_rescaled.npy',a)
+np.save('/scratch/dsw310/CCA/data/smoothed/HI_smoothed_512Res_rescaled2.npy',a)
 
 def box(ind):
     ind2=ind // 3969; ind1= (ind%3969) // 63; ind0=ind % 63
@@ -79,9 +82,10 @@ def box(ind):
     dm=np.expand_dims(dm,axis=0)
     #hi=np.expand_dims(hi,axis=0)
     
-    np.save('/scratch/dsw310/CCA/data/DM_training/'+str(ind)+'.npy',dm)   
+    np.save('/scratch/dsw310/CCA/data/DM_training2/'+str(ind)+'.npy',dm)   
     #np.save('/scratch/dsw310/CCA/data/smoothed/HI_training/'+str(ind)+'.npy',hi)
     return
+
 
 start_time = time.time()
 j=np.arange(0,pow(63,3),1)
@@ -120,15 +124,11 @@ import numpy as np
 from mpi4py import MPI
 import smoothing_library as SL
 import Pk_library as PKL
-import units_library as UL
 import h5py
-
-rho_crit = UL.units().rho_crit
 
 f = h5py.File('/scratch/dsw310/CCA/data/fields_z=1.0.hdf5', 'r')
 delta_HI=f['delta_HI'][0:]
 f.close()
-
 
 BoxSize = 75.0 #Mpc/h
 R       = 0.3  #Mpc/h
@@ -141,8 +141,6 @@ axis = 0
 W_k = SL.FT_filter(BoxSize, R, grid, Filter, threads)
 delta_HI = SL.field_smoothing(delta_HI, W_k, threads)
 delta_HI /= np.mean(delta_HI, dtype=np.float64);  delta_HI -= 1.0
-
-print ('done!')
 
 #Pk = PKL.Pk(delta_HI, BoxSize, axis, MAS, 8)
 #np.savetxt('Pk_HI_smoothed=0.1.dat', np.transpose([Pk.k3D, Pk.Pk[:,0]]))
@@ -222,7 +220,7 @@ g.create_dataset('delta_HI', data=delta_HI)
 g.close()
 
 #-----------------------------------------------------------------------
-# HI decrease resolution
+# HI reduce grid size
 
 import numpy as np
 import sys,os,h5py
@@ -291,6 +289,40 @@ for ind in range(0,pow(63,3)):#
          
 f.close()
 #g.close()
+
+#--------------------------------------------------------------------------------------------------
+#Galaxy field from TNG100-1 directly from Illustris website
+
+import illustris_python as il
+import MAS_library as MASL
+import smoothing_library as SL
+
+basePath = '/scratch/dsw310/CCA/TNG/data/TNG100-1/z_1.0'
+fields = ['SubhaloMass','SubhaloPos','SubhaloFlag'] #SubhaloCM
+subhalos = il.groupcat.loadSubhalos(basePath,50,fields=fields)
+
+mask= subhalos['SubhaloFlag'] ==1
+mass= subhalos['SubhaloMass'][mask]/ 0.704
+pos= (subhalos['SubhaloPos'][mask])/1000.
+
+mask=mass>=.1
+mass= mass[mask]; pos= pos[mask]
+
+BoxSize = 75. #Mpc/h
+dims = 512; MAS  = 'CIC';axis = 0;
+
+delta_m = np.zeros((dims,dims,dims), dtype=np.float32)
+MASL.MA(pos, delta_m, BoxSize, MAS, W=np.ones(len(pos),dtype=np.float32));
+#np.save('/scratch/dsw310/CCA/data/Galaxies2.npy',delta_m)
+
+R       = 0.3; grid    = delta_m.shape[0]
+Filter  = 'Top-Hat'; threads = 2; axis = 0
+
+W_k = SL.FT_filter(BoxSize, R, grid, Filter, threads)
+delta_m = SL.field_smoothing(delta_m, W_k, threads)
+delta_m /= np.mean(delta_m, dtype=np.float64);  delta_m -= 1.0
+#np.save('/scratch/dsw310/CCA/data/Galaxies2.npy',delta_m)
+
 
 
 #--------------------------------------------------------------------------------------------------
